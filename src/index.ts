@@ -17,19 +17,14 @@ function getRandomIndex(length: number, random: () => number): number {
   return Math.floor(random() * length);
 }
 
-export function useNextNonRepeatingRandomNumber(
-  x: number,
-  y: number,
-  random: () => number = Math.random,
-): () => number {
-  assertPositiveInteger(x, 'x');
-  assertPositiveInteger(y, 'y');
+export type NextNumber = () => number;
+
+export function useNextSequentialNumber(x: number): NextNumber {
+  assertPositiveInteger(x, "x");
 
   let nextNumber = 0;
-  let sourceExhausted = false;
-  const cache: number[] = [];
 
-  const getNextNumber = (): number => {
+  return (): number => {
     if (nextNumber >= x) {
       throw new NoMoreNumbersAvailableError();
     }
@@ -38,11 +33,22 @@ export function useNextNonRepeatingRandomNumber(
     nextNumber += 1;
     return currentNumber;
   };
+}
+
+export function useNumberCache(
+  nextNumber: NextNumber,
+  y: number,
+  random: () => number = Math.random,
+): NextNumber {
+  assertPositiveInteger(y, "y");
+
+  let sourceExhausted = false;
+  const cache: number[] = [];
 
   const fillCache = (): void => {
     while (cache.length < y && !sourceExhausted) {
       try {
-        cache.push(getNextNumber());
+        cache.push(nextNumber());
       } catch (error) {
         if (!(error instanceof NoMoreNumbersAvailableError)) {
           throw error;
@@ -67,7 +73,7 @@ export function useNextNonRepeatingRandomNumber(
 
     if (!sourceExhausted) {
       try {
-        cache[selectedIndex] = getNextNumber();
+        cache[selectedIndex] = nextNumber();
         return selectedValue;
       } catch (error) {
         if (!(error instanceof NoMoreNumbersAvailableError)) {
@@ -86,10 +92,19 @@ export function useNextNonRepeatingRandomNumber(
   };
 }
 
+export function useNextNonRepeatingRandomNumber(
+  x: number,
+  y: number,
+  random: () => number = Math.random,
+): NextNumber {
+  return useNumberCache(useNextSequentialNumber(x), y, random);
+}
+
 export function main(): void {
   const x = 10;
   const y = 4;
-  const f = useNextNonRepeatingRandomNumber(x, y);
+  const nextNumber = useNextSequentialNumber(x);
+  const f = useNumberCache(nextNumber, y);
 
   for (let index = 0; index < 10; index += 1) {
     console.log(f());
