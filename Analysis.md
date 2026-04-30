@@ -284,6 +284,225 @@ Damit ergibt sich ein klares Bild:
 - Die gecachte Levels-Variante ist ein sinnvoller Kompromiss: deutlich weniger lokale Blatt-Clusterung als die ungecachete Levels-Variante, aber weiterhin weniger Speicherbedarf als eine vollstaendig uniforme Permutation.
 - Mit dem Sweep laesst sich dieser Kompromiss fuer konkrete Werte von `n`, `xValues` und `trials` gezielt abstimmen.
 
+## Laufzeit und Speicherverbrauch in O-Notation
+
+Im Folgenden bezeichne ich mit `N` die Gesamtzahl der auszugebenden Werte.
+
+- Fuer den Cache-Ansatz aus [src/index.ts](src/index.ts) ist `N = x`.
+- Fuer die RoundRobin-Varianten ist `N = n`.
+- Ich nehme an, dass ein Aufruf der Zufallsquelle, ein Array-Zugriff und ein einfacher Tausch jeweils `O(1)` kosten.
+
+Die wichtigste Unterscheidung ist dabei:
+
+- Kosten pro einzelnem `next()`-Aufruf koennen punktuell groesser sein, wenn gerade ein Cache nachgefuellt oder eine neue Portion aufgebaut werden muss.
+- Interessanter ist hier daher die amortisierte Kosten pro ausgegebenem Wert und die Gesamtkosten fuer die vollstaendige Folge.
+
+### Uebersicht
+
+| Variante | amortisierte Zeit pro Wert | Gesamtlaufzeit fuer alle `N` Werte | zusaetzlicher Speicher |
+| --- | --- | --- | --- |
+| Sequentielle Quelle `useNextSequentialNumber` | `O(1)` | `O(N)` | `O(1)` |
+| Cache-Generator `useNextNonRepeatingRandomNumber(N, y)` | `O(1)` | `O(N)` | `O(min(N, y))` |
+| Uniforme Variante `useNextUniformRandomNumber(N)` | `O(1)` nach Vorbereitung | `O(N)` | `O(N)` |
+| RoundRobin-Baum mit festem `x` | `O(1)` amortisiert | `O(N)` fuer konstantes `x >= 2` | `O(x \log_x N)` |
+| RoundRobin-Baum mit `xValues` | `O(1)` amortisiert im ueblichen Fall | `O\left(\sum_i m_i\right)` | `O\left(\sum_i \min(m_i, b_i)\right)` |
+| Gecachter RoundRobin-Baum mit `xValues` und `cacheSize = c` | `O(1)` amortisiert im ueblichen Fall | `O\left(\sum_i m_i\right)` | `O\left(\sum_i (\min(m_i, b_i) + \min(m_i, c))\right)` |
+
+Fuer die letzten beiden Zeilen gilt:
+
+- `m_0 = N`
+- `b_i = xValues[min(i, xValues.length - 1)]`
+- `m_{i+1} = \lceil m_i / b_i \rceil`
+
+`m_i` ist also die Problemgroesse auf Ebene `i`, und `b_i` ist die dort verwendete Portionsbreite.
+
+### 1. Sequentielle Quelle in `src/index.ts`
+
+`useNextSequentialNumber(x)` haelt nur einen einzigen Zaehler `nextNumber`.
+
+Pro Aufruf passiert genau folgendes:
+
+- Grenzpruefung
+- Rueckgabe des aktuellen Werts
+- Inkrement des Zaehlerstands
+
+Jeder dieser Schritte ist konstant teuer. Daher gilt:
+
+- pro Wert `O(1)`
+- fuer alle `N` Werte zusammen `O(N)`
+- Speicher `O(1)`
+
+Das ist die triviale Baseline.
+
+### 2. Cache-Ansatz in `src/index.ts`
+
+Bei `useNextNonRepeatingRandomNumber(N, y)` werden sequentielle Werte in einen Cache der Groesse `y` eingespeist und daraus zufaellig entnommen.
+
+Warum bleibt die Gesamtlaufzeit linear?
+
+- Jeder Wert wird von der sequentiellen Quelle genau einmal erzeugt.
+- Jeder Wert wird genau einmal in den Cache gelegt.
+- Jeder Wert wird genau einmal aus dem Cache entnommen.
+- Beim Entnehmen fallen nur konstante Array-Operationen an: Index bestimmen, lesen, eventuell ersetzen oder mit dem letzten Element tauschen und `pop()`.
+
+Damit wird jeder der `N` Werte nur eine konstante Anzahl von Malen angefasst. Also:
+
+- Gesamtlaufzeit `O(N)`
+- amortisiert pro Wert `O(1)`
+
+Der Speicherverbrauch ergibt sich direkt aus der Cache-Groesse:
+
+- der Cache enthaelt nie mehr als `y` Werte
+- insgesamt gibt es aber nur `N` Werte
+
+Also ist der Peak-Speicher
+
+$$
+O(\min(N, y))
+$$
+
+und fuer den ueblichen Fall `y <= N` einfach `O(y)`.
+
+Ein einzelner frueher `next()`-Aufruf kann zwar `O(min(N, y))` kosten, weil der Cache initial befuellt wird, aber ueber die komplette Folge gemittelt bleibt es `O(1)` pro Wert.
+
+### 3. Uniforme Variante in `src/uniformRandomNumber.ts`
+
+Hier wird zuerst ein Array mit allen `N` Zahlen aufgebaut und dann per Fisher-Yates gemischt.
+
+Die Herleitung ist direkt:
+
+- das Aufbauen des Arrays kostet `O(N)`
+- Fisher-Yates durchlaeuft das Array einmal rueckwaerts und macht pro Position nur einen konstant teuren Swap, also ebenfalls `O(N)`
+- die spaetere Ausgabe ist nur noch ein sequentielles Weiterlesen aus dem gemischten Array, also `O(1)` pro Wert
+
+Damit gilt insgesamt:
+
+- Gesamtlaufzeit `O(N)`
+- Speicher `O(N)`
+
+Die uniforme Variante ist also asymptotisch zeitlich nicht schlechter als der Cache-Ansatz, bezahlt die bessere Verteilungsqualitaet aber mit linearem Speicher.
+
+### 4. RoundRobin-Baum mit festem `x`
+
+Bei [src/roundRobinTreeRandomNumber.ts](src/roundRobinTreeRandomNumber.ts) wird das Problem rekursiv verkleinert.
+
+Auf einer Ebene mit Problemgroesse `m` passiert Folgendes:
+
+- Es werden `\lceil m / x \rceil` Portionen definiert.
+- Ueber alle Portionen zusammen wird jedes der `m` Elemente genau einmal in genau eine Portion geschrieben.
+- Jede Portion wird lokal gemischt.
+- Danach werden die Portionen der Reihe nach ausgegeben.
+
+Die gesamte Arbeit einer Ebene ist daher `O(m)`, nicht `O(m \cdot x)`, weil sich die Portionen nicht ueberlappen und zusammen genau `m` Elemente enthalten.
+
+Damit ergibt sich fuer `x >= 2` die Rekurrenz
+
+$$
+T(m) = T(\lceil m / x \rceil) + O(m)
+$$
+
+und damit
+
+$$
+T(N) = O\left(N + \frac{N}{x} + \frac{N}{x^2} + \dots\right) = O(N)
+$$
+
+weil die Reihe geometrisch faellt.
+
+Zum Speicher:
+
+- jede Ebene haelt hoechstens eine aktuelle Portion
+- diese Portion hat Groesse hoechstens `x`
+- die Anzahl aktiver Ebenen ist `O(\log_x N)`
+
+Also gilt fuer `x >= 2`:
+
+$$
+O(x \log_x N)
+$$
+
+Fuer konstantes `x` wird daraus `O(\log N)` zusaetzlicher Speicher.
+
+Sonderfall `x = 1`:
+
+- dann faellt die Implementierung auf die sequentielle Quelle zurueck
+- Laufzeit also `O(N)`
+- Speicher `O(1)`
+
+### 5. RoundRobin-Baum mit `xValues`
+
+Bei [src/roundRobinTreeRandomNumberByLevels.ts](src/roundRobinTreeRandomNumberByLevels.ts) kann jede Ebene eine andere Portionsbreite haben.
+
+Wenn `b_i` die Portionsbreite der Ebene `i` ist und `m_i` die jeweilige Problemgroesse, dann kostet Ebene `i` wieder `O(m_i)`, aus genau demselben Grund wie oben: jedes Element dieser Ebene wird genau einmal in eine Portion gelegt, lokal gemischt und spaeter einmal ausgegeben.
+
+Die Gesamtlaufzeit ist daher
+
+$$
+O\left(\sum_i m_i\right)
+$$
+
+Das ist die sauberste allgemeine Form.
+
+Im typischen Fall, dass die Baumstruktur wirklich schrumpft, also ab irgendeinem Punkt immer `b_i >= 2` gilt, faellt `m_i` geometrisch und damit folgt wieder:
+
+$$
+O(N)
+$$
+
+Warum schreibe ich hier trotzdem die Summenform hin? Weil `xValues` auch `1` enthalten darf. Wenn mehrere fruehe Ebenen `b_i = 1` haben, schrumpft das Problem dort noch nicht, und jede solche Ebene kostet noch einmal `O(N)`. Die Summenform macht genau das sichtbar.
+
+Der Speicherverbrauch ist die Summe der gleichzeitig gehaltenen Portionen:
+
+$$
+O\left(\sum_i \min(m_i, b_i)\right)
+$$
+
+Denn auf Ebene `i` ist die aktuelle Portion nie groesser als die lokale Portionsbreite `b_i`, aber natuerlich auch nie groesser als das Restproblem `m_i`.
+
+Im haeufigen Fall fester, kleiner `xValues` mit echter Schrumpfung auf jeder Ebene ergibt sich daraus praktisch logarithmischer Speicherverbrauch in `N`.
+
+### 6. Gecachter RoundRobin-Baum
+
+Bei [src/roundRobinTreeRandomNumberByLevelsWithCache.ts](src/roundRobinTreeRandomNumberByLevelsWithCache.ts) kommt auf jeder Ebene noch ein `numberCache` mit Groesse `c` dazu.
+
+Zeitlich aendert das asymptotisch weniger, als man zunaechst vermuten koennte:
+
+- Die zugrunde liegende Ebenenquelle produziert weiterhin genau `m_i` Werte.
+- Jeder dieser Werte wird auf Ebene `i` zusaetzlich genau einmal in den Cache eingelegt und genau einmal wieder entnommen.
+- Diese Cache-Operationen sind jeweils konstant teuer.
+
+Damit bleibt die Zeit pro Ebene `O(m_i)`, nur mit einer groesseren Konstanten. Insgesamt also wieder:
+
+$$
+O\left(\sum_i m_i\right)
+$$
+
+und im ueblichen schrumpfenden Fall wieder `O(N)`.
+
+Beim Speicher kommt der Cache pro Ebene zusaetzlich zur aktuellen Portion hinzu. Daher:
+
+$$
+O\left(\sum_i (\min(m_i, b_i) + \min(m_i, c))\right)
+$$
+
+Im typischen Fall konstanter kleiner `xValues` und konstanter `cacheSize` bedeutet das weiterhin nur logarithmischen Speicher in `N`, aber mit einem groesseren konstanten Faktor als ohne Cache.
+
+### Praktische Einordnung
+
+Die asymptotischen Unterschiede sind kleiner als die qualitativen Unterschiede der Verteilungen:
+
+- zeitlich liegen fast alle Generatoren fuer eine vollstaendige Folge bei `O(N)`
+- der wesentliche Unterschied liegt vor allem im Speicher
+- die uniforme Variante braucht `O(N)` Speicher
+- der einfache Cache-Ansatz braucht nur `O(y)`
+- die RoundRobin-Varianten liegen dazwischen und haengen von Ebenentiefe, Portionsbreiten und zusaetzlichem Cache ab
+
+Fuer die Wahl der Methode bedeutet das praktisch:
+
+- Wenn Speicher knapp ist, sind Cache- und RoundRobin-Verfahren attraktiv.
+- Wenn eine wirklich uniforme Permutation benoetigt wird, ist der lineare Speicher der Fisher-Yates-Variante der Preis fuer die saubere Statistik.
+- Wenn man eine Baumstruktur behalten, aber lokale Clusterung reduzieren will, ist die gecachte Levels-Variante asymptotisch weiterhin linear in der Zeit und meistens noch deutlich unter `O(N)` beim Speicher.
+
 ## Ausfuehrung
 
 - Cache-Ansatz demonstrieren: `npm start`
