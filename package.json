@@ -6,8 +6,11 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "start": "npm run build && node dist/src/index.js",
+    "start:round-robin-tree": "npm run build && node dist/src/roundRobinTreeRandomNumber.js",
+    "start:round-robin-tree-levels": "npm run build && node dist/src/roundRobinTreeRandomNumberByLevels.js",
     "start:uniform": "npm run build && node dist/src/uniformRandomNumber.js",
     "simulate:bias": "npm run build && node dist/src/cacheBiasSimulation.js",
+    "simulate:round-robin-quality": "npm run build && node dist/src/roundRobinQualitySimulation.js",
     "test": "vitest run"
   },
   "devDependencies": {

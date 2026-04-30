@@ -160,8 +160,51 @@ Die Simulation bestaetigt damit die qualitative Analyse sehr klar.
 - Wenn eine echte uniforme Permutation benoetigt wird, ist [src/uniformRandomNumber.ts](src/uniformRandomNumber.ts) der richtige Ansatz.
 - Wenn nur wenig Speicher verbraucht werden soll und eine bewusst eingeschraenkte Durchmischung akzeptabel ist, kann der Cache-Ansatz weiterhin sinnvoll sein.
 
+## RoundRobin-Varianten im Vergleich zur uniformen Referenz
+
+Fuer die beiden RoundRobin-Baum-Varianten in [src/roundRobinTreeRandomNumber.ts](src/roundRobinTreeRandomNumber.ts) und [src/roundRobinTreeRandomNumberByLevels.ts](src/roundRobinTreeRandomNumberByLevels.ts) gibt es eine eigene Vergleichssimulation in [src/roundRobinQualitySimulation.ts](src/roundRobinQualitySimulation.ts).
+
+Die Simulation betrachtet vier verschiedene Signale:
+
+- Entropie der ersten Position
+- Abweichung der Inversionsrate von `0.5`
+- Prefix-Coverage ueber Buckets des Gesamtbereichs
+- Blatt-Clusterung, also wie oft benachbarte Ausgaben aus demselben Blatt-Block stammen
+
+### Warum mehrere Kennzahlen noetig sind
+
+Die RoundRobin-Varianten lassen sich nicht mit nur einer einfachen Kennzahl sinnvoll charakterisieren.
+
+- Die erste Position ist fast uniform.
+- Die globale Inversionsrate ist ebenfalls fast identisch zu einer uniformen Permutation.
+- Trotzdem gibt es eine sehr starke lokale Struktur, weil komplette Blatt-Portionen zusammenhaengend ausgegeben werden.
+- Gleichzeitig kann die Prefix-Coverage sogar besser sein als bei einer uniformen Permutation, weil ein Blatt Werte aus weit auseinanderliegenden Bereichen enthalten kann.
+
+### Beispielergebnisse aus `npm run simulate:round-robin-quality`
+
+| n | fixedX | xValues | fixedEntropyBits | levelsEntropyBits | uniformEntropyBits | fixedInversionDelta | levelsInversionDelta | uniformInversionDelta | fixedPrefixCoverage | levelsPrefixCoverage | uniformPrefixCoverage | fixedLeafAdjacency | uniformFixedAdjacency |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 25 | 4 | 4, 3, 2 | 4.61 | 4.45 | 4.64 | 0.000 | 0.000 | 0.000 | 0.83 | 0.81 | 0.73 | 0.75 | 0.11 |
+| 100 | 4 | 4, 3, 2 | 6.61 | 6.46 | 6.63 | 0.000 | 0.000 | 0.001 | 0.80 | 0.87 | 0.67 | 0.76 | 0.03 |
+| 250 | 8 | 8, 4, 2 | 7.93 | 7.93 | 7.93 | 0.000 | 0.000 | 0.000 | 1.00 | 1.00 | 0.94 | 0.88 | 0.03 |
+
+### Interpretation der neuen Kennzahlen
+
+- Die erste Position ist bei beiden RoundRobin-Varianten leicht weniger entropisch als bei der uniformen Referenz, aber der Unterschied ist klein.
+- Die Inversionsrate ist bei allen drei Verfahren praktisch `0.5`. Diese Kennzahl allein erkennt den RoundRobin-Bias also kaum.
+- Die Prefix-Coverage der ersten `k` Werte ist bei den RoundRobin-Varianten in den gezeigten Szenarien sogar besser als bei der uniformen Referenz. Das liegt daran, dass ein Blatt Werte aus weit auseinanderliegenden Bereichen des Zahlenraums enthalten kann.
+- Die Blatt-Clusterung trennt die Verfahren sehr deutlich. Bei `n = 100` liegt sie bei etwa `0.76` fuer beide RoundRobin-Varianten, aber nur bei etwa `0.03` fuer eine uniforme Permutation.
+
+Damit ergibt sich ein klares Bild:
+
+- Global wirken die RoundRobin-Varianten auf den ersten Blick relativ gut.
+- Lokal sind sie stark strukturiert.
+- Wer moeglichst wenig unmittelbare Nachbarschaftsstruktur will, braucht weiterhin die uniforme Variante.
+- Wer fruehe Streuung ueber den Zahlenraum schaetzt und die Blockstruktur akzeptiert, bekommt mit den RoundRobin-Varianten ein interessantes Mittelmodell.
+
 ## Ausfuehrung
 
 - Cache-Ansatz demonstrieren: `npm start`
 - Uniforme Variante demonstrieren: `npm run start:uniform`
 - Bias-Simulation ausfuehren: `npm run simulate:bias`
+- RoundRobin-Qualitaet vergleichen: `npm run simulate:round-robin-quality`
