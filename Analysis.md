@@ -1,130 +1,128 @@
-# Analyse
+# Analysis
 
-## Ausgangsfrage
+## Opening Question
 
-Die Aussage
+The statement
 
-> Die Qualitaet der von `useNextNonRepeatingRandomNumber(x, y)` gelieferten Zufallszahlen nimmt bei gleichbleibendem `y` und wachsendem `x` stetig ab.
+> The quality of the random numbers delivered by `useNextNonRepeatingRandomNumber(x, y)` decreases steadily as `y` stays fixed and `x` grows.
 
-ist im Kern richtig, aber zu grob formuliert.
+is essentially correct, but stated too coarsely.
 
-Praeziser ist folgende Aussage:
+A more precise formulation is:
 
-- Fuer `x <= y` ist der Ansatz in [src/index.ts](src/index.ts) sogar exakt uniform, weil alle Werte `0` bis `x - 1` sofort im Cache liegen und danach nur noch zufaellig ohne Zuruecklegen entnommen werden.
-- Fuer festes `y` und wachsendes `x > y` nimmt die Qualitaet dann deutlich ab.
-- Das Wort `stetig` passt mathematisch nicht ganz, weil `x` nur ganzzahlige Werte annimmt und es fuer `x <= y` zunaechst ein Plateau ohne Qualitaetsverlust gibt.
+- For `x <= y` the approach in [src/index.ts](src/index.ts) is even exactly uniform, because all values `0` through `x - 1` are immediately in the cache and are subsequently drawn at random without replacement.
+- For fixed `y` and growing `x > y` the quality then falls off noticeably.
+- The word "steadily" does not fit mathematically, because `x` only takes integer values and there is an initial plateau without any quality loss for `x <= y`.
 
-## Der Cache-Ansatz in src/index.ts
+## The Cache Approach in src/index.ts
 
-Die Implementierung in [src/index.ts](src/index.ts) arbeitet so:
+The implementation in [src/index.ts](src/index.ts) works as follows:
 
-1. Beim ersten Zugriff wird der Cache mit `min(x, y)` Werten befuellt.
-2. Solange noch neue Werte verfuegbar sind, wird bei jeder Ziehung ein zufaelliger Cache-Eintrag ausgegeben und direkt durch den naechsten noch nicht verwendeten Wert ersetzt.
-3. Wenn keine neuen Werte mehr verfuegbar sind, wird der Cache nur noch zufaellig geleert.
+1. On the first access the cache is filled with `min(x, y)` values.
+2. As long as new values are still available, each draw outputs a random cache entry and immediately replaces it with the next unused value.
+3. Once no new values are available, the cache is simply drained at random.
 
-Solange `x > y`, wird also nicht aus allen noch verfuegbaren Zahlen gezogen, sondern nur aus einem beweglichen Fenster der Groesse `y`.
+As long as `x > y`, draws are therefore not taken from all remaining numbers, but only from a sliding window of size `y`.
 
-### Warum dadurch Bias entsteht
+### Why This Causes Bias
 
-Schon die erste ausgegebene Zahl zeigt das Problem:
+Even the very first output reveals the problem:
 
-- Beim ersten Zugriff liegen nur die Werte `0` bis `min(x, y) - 1` im Cache.
-- Fuer `x > y` kann die erste Zahl also nur einer von `y` Werten sein, obwohl eigentlich `x` Werte moeglich waeren.
-- Der Anteil der moeglichen ersten Werte ist damit nur
+- On the first access only values `0` through `min(x, y) - 1` are in the cache.
+- For `x > y` the first number can therefore only be one of `y` values, even though `x` values would actually be possible.
+- The proportion of possible first values is thus only
 
 $$
 \frac{y}{x}
 $$
 
-und dieser Anteil geht bei festem `y` und wachsendem `x` gegen `0`.
+and this proportion tends to `0` as `y` stays fixed and `x` grows.
 
-Auch spaeter bleiben Einschraenkungen bestehen. Eine Zahl `n >= y` kann nicht beliebig frueh erscheinen, weil sie erst dann in den Cache gelangen kann, wenn vorher genug fruehere Werte bereits gezogen wurden. In 1-basierter Positionierung kann `n` fruehestens an Position
+Later draws are also constrained. A number `n >= y` cannot appear arbitrarily early, because it can only enter the cache once sufficiently many earlier values have already been drawn. In 1-based position notation, `n` can appear no earlier than position
 
 $$
 \max(1, n - y + 2)
 $$
 
-auftauchen.
+As a result, many permutations are fundamentally unreachable.
 
-Damit sind viele Permutationen grundsaetzlich unmoeglich.
+### Number of Reachable Permutations
 
-### Anzahl der erreichbaren Permutationen
-
-Fuer `x > y` lassen sich hoechstens
+For `x > y` at most
 
 $$
 y^{x-y} \cdot y!
 $$
 
-verschiedene Ausgabereihenfolgen erzeugen:
+distinct output orderings can be produced:
 
-- In den ersten `x - y` Schritten gibt es jeweils hoechstens `y` moegliche Cache-Positionen.
-- Danach verbleiben `y` Werte im Cache, die noch in beliebiger Reihenfolge ausgegeben werden koennen.
+- In the first `x - y` steps there are at most `y` possible cache positions each.
+- Afterwards `y` values remain in the cache and can still be output in any order.
 
-Eine echte uniforme Permutation haette dagegen
+A truly uniform permutation would have
 
 $$
 x!
 $$
 
-moegliche Ausgabefolgen.
+possible output sequences.
 
-Das Verhaeltnis
+The ratio
 
 $$
 \frac{y^{x-y} \cdot y!}{x!}
 $$
 
-geht bei festem `y` und wachsendem `x` gegen `0`. Das ist ein starkes Indiz dafuer, dass die globale Verteilungsqualitaet mit wachsendem `x / y` schlechter wird.
+tends to `0` as `y` stays fixed and `x` grows. This is strong evidence that the global distribution quality deteriorates as `x / y` increases.
 
-## Der neue uniforme Ansatz in uniformRandomNumber.ts
+## The New Uniform Approach in uniformRandomNumber.ts
 
-In [src/uniformRandomNumber.ts](src/uniformRandomNumber.ts) liegt nun eine Referenzimplementierung, die wirklich eine uniforme Permutation erzeugt.
+In [src/uniformRandomNumber.ts](src/uniformRandomNumber.ts) there is now a reference implementation that genuinely produces a uniform permutation.
 
-Die Idee ist einfach:
+The idea is simple:
 
-1. Es wird ein Array mit allen Zahlen `0` bis `x - 1` aufgebaut.
-2. Dieses Array wird mit Fisher-Yates gemischt.
-3. Danach werden die Werte nacheinander ausgegeben.
+1. An array of all numbers `0` through `x - 1` is built.
+2. This array is shuffled with Fisher-Yates.
+3. The values are then output one by one.
 
-Wenn die zugrunde liegende Zufallsquelle uniform ist, ist jede der `x!` Permutationen gleich wahrscheinlich. Das ist genau die Eigenschaft, die dem Cache-Ansatz fuer `x > y` fehlt.
+If the underlying random source is uniform, every one of the `x!` permutations is equally likely. This is precisely the property that the cache approach lacks for `x > y`.
 
-### Vorteile
+### Advantages
 
-- Statistisch saubere, uniforme Permutation.
-- Keine Einschraenkung auf ein Cache-Fenster.
-- Jede Zahl kann an jeder Position auftreten.
+- Statistically sound, uniform permutation.
+- No restriction to a cache window.
+- Every number can appear at every position.
 
-### Kosten
+### Costs
 
-- Speicherbedarf `O(x)` statt `O(y)`.
-- Die gesamte Permutation wird vorab aufgebaut und gemischt.
+- Memory requirement `O(x)` instead of `O(y)`.
+- The entire permutation is built and shuffled upfront.
 
-Damit ist [src/uniformRandomNumber.ts](src/uniformRandomNumber.ts) die bessere Wahl, wenn Verteilungsqualitaet wichtiger ist als ein kleines Speicherbudget.
+Therefore [src/uniformRandomNumber.ts](src/uniformRandomNumber.ts) is the better choice when distribution quality matters more than a small memory budget.
 
-## Die Simulation in cacheBiasSimulation.ts
+## The Simulation in cacheBiasSimulation.ts
 
-In [src/cacheBiasSimulation.ts](src/cacheBiasSimulation.ts) gibt es eine kleine, reproduzierbare Simulation, die den Cache-Ansatz aus [src/index.ts](src/index.ts) direkt mit der uniformen Variante aus [src/uniformRandomNumber.ts](src/uniformRandomNumber.ts) vergleicht.
+In [src/cacheBiasSimulation.ts](src/cacheBiasSimulation.ts) there is a small, reproducible simulation that directly compares the cache approach from [src/index.ts](src/index.ts) with the uniform variant from [src/uniformRandomNumber.ts](src/uniformRandomNumber.ts).
 
-Die Simulation verwendet:
+The simulation uses:
 
-- einen seedbaren Pseudozufallszahlengenerator fuer reproduzierbare Ergebnisse,
-- mehrere Szenarien mit festem `y = 4` und wachsendem `x`,
-- `5000` Durchlaeufe pro Szenario.
+- a seedable pseudo-random number generator for reproducible results,
+- several scenarios with fixed `y = 4` and growing `x`,
+- `5000` runs per scenario.
 
-### Was gemessen wird
+### What Is Measured
 
-Die Simulation betrachtet bewusst nur die erste ausgegebene Zahl. Das ist keine vollstaendige Charakterisierung der gesamten Verteilung, aber bereits ein sehr starkes Signal:
+The simulation deliberately looks only at the first output value. This is not a complete characterisation of the full distribution, but it is already a very strong signal:
 
-- Wenn schon die erste Position deutlich verzerrt ist, kann die gesamte Permutation nicht uniform sein.
-- Fuer den Cache-Ansatz ist die theoretische Obergrenze fuer die Anzahl moeglicher erster Werte genau `min(x, y)`.
-- Fuer die uniforme Variante koennen dagegen alle `x` Werte an erster Stelle auftreten.
+- If even the first position is noticeably biased, the overall permutation cannot be uniform.
+- For the cache approach the theoretical upper bound on the number of possible first values is exactly `min(x, y)`.
+- For the uniform variant, by contrast, all `x` values can appear in first position.
 
-Zusatzlich wird die Entropie der ersten Position in Bit berechnet.
+Additionally the entropy of the first position in bits is computed.
 
-## Beispielergebnisse aus der aktuellen Simulation
+## Example Results from the Current Simulation
 
-Der Lauf ueber `npm run simulate:bias` liefert aktuell:
+A run via `npm run simulate:bias` currently produces:
 
 | x | y | trials | cacheFirstValues | uniformFirstValues | cacheCoverage | uniformCoverage | cacheEntropyBits | uniformEntropyBits |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -134,54 +132,54 @@ Der Lauf ueber `npm run simulate:bias` liefert aktuell:
 
 ### Interpretation
 
-- Beim Cache-Ansatz bleibt die Anzahl moeglicher erster Werte bei festem `y = 4` konstant bei `4`, egal wie gross `x` wird.
-- Die Coverage der ersten Position faellt daher von `0.40` ueber `0.16` auf `0.04`.
-- Die Entropie der ersten Position bleibt beim Cache-Ansatz bei etwa
+- With the cache approach the number of possible first values stays constant at `4` for fixed `y = 4`, no matter how large `x` becomes.
+- The first-position coverage therefore drops from `0.40` to `0.16` to `0.04`.
+- The entropy of the first position stays at approximately
 
 $$
 \log_2(4) = 2
 $$
 
-Bit, weil es effektiv nur vier moegliche erste Werte gibt.
-- Die uniforme Variante erreicht fuer die erste Position dagegen alle `x` Werte und eine Entropie nahe
+bits for the cache approach, because there are effectively only four possible first values.
+- The uniform variant, by contrast, reaches all `x` values in first position and achieves an entropy close to
 
 $$
 \log_2(x)
 $$
 
-also `3.32`, `4.64` und `6.63` Bit fuer `x = 10`, `25` und `100`.
+i.e. `3.32`, `4.64`, and `6.63` bits for `x = 10`, `25`, and `100`.
 
-Die Simulation bestaetigt damit die qualitative Analyse sehr klar.
+The simulation thus confirms the qualitative analysis very clearly.
 
-## Praktisches Fazit
+## Practical Conclusion
 
-- Wenn `x <= y`, ist der Cache-Ansatz aus [src/index.ts](src/index.ts) bereits vollstaendig in Ordnung und sogar uniform.
-- Wenn `x > y` und `y` fest bleibt, nimmt die Zufallsqualitaet mit wachsendem `x` deutlich ab.
-- Wenn eine echte uniforme Permutation benoetigt wird, ist [src/uniformRandomNumber.ts](src/uniformRandomNumber.ts) der richtige Ansatz.
-- Wenn nur wenig Speicher verbraucht werden soll und eine bewusst eingeschraenkte Durchmischung akzeptabel ist, kann der Cache-Ansatz weiterhin sinnvoll sein.
+- If `x <= y`, the cache approach from [src/index.ts](src/index.ts) is already fully adequate and even uniform.
+- If `x > y` and `y` remains fixed, the random quality degrades noticeably as `x` grows.
+- If a truly uniform permutation is needed, [src/uniformRandomNumber.ts](src/uniformRandomNumber.ts) is the right approach.
+- If only a small amount of memory may be used and a deliberately limited shuffling is acceptable, the cache approach can still be a reasonable choice.
 
-## RoundRobin-Varianten im Vergleich zur uniformen Referenz
+## Round-Robin Variants Compared with the Uniform Reference
 
-Fuer die RoundRobin-Baum-Varianten in [src/roundRobinTreeRandomNumber.ts](src/roundRobinTreeRandomNumber.ts), [src/roundRobinTreeRandomNumberByLevels.ts](src/roundRobinTreeRandomNumberByLevels.ts) und [src/roundRobinTreeRandomNumberByLevelsWithCache.ts](src/roundRobinTreeRandomNumberByLevelsWithCache.ts) gibt es eine eigene Vergleichssimulation in [src/roundRobinQualitySimulation.ts](src/roundRobinQualitySimulation.ts).
+For the round-robin tree variants in [src/roundRobinTreeRandomNumber.ts](src/roundRobinTreeRandomNumber.ts), [src/roundRobinTreeRandomNumberByLevels.ts](src/roundRobinTreeRandomNumberByLevels.ts), and [src/roundRobinTreeRandomNumberByLevelsWithCache.ts](src/roundRobinTreeRandomNumberByLevelsWithCache.ts) there is a dedicated comparison simulation in [src/roundRobinQualitySimulation.ts](src/roundRobinQualitySimulation.ts).
 
-Die Simulation betrachtet vier verschiedene Signale:
+The simulation examines four different signals:
 
-- Entropie der ersten Position
-- Abweichung der Inversionsrate von `0.5`
-- Prefix-Coverage ueber Buckets des Gesamtbereichs
-- Blatt-Clusterung, also wie oft benachbarte Ausgaben aus demselben Blatt-Block stammen
+- Entropy of the first position
+- Deviation of the inversion rate from `0.5`
+- Prefix coverage over buckets of the total range
+- Leaf clustering, i.e. how often consecutive outputs come from the same leaf block
 
-### Warum mehrere Kennzahlen noetig sind
+### Why Multiple Metrics Are Necessary
 
-Die RoundRobin-Varianten lassen sich nicht mit nur einer einfachen Kennzahl sinnvoll charakterisieren.
+The round-robin variants cannot be meaningfully characterised with a single simple metric.
 
-- Die erste Position ist fast uniform.
-- Die globale Inversionsrate ist ebenfalls fast identisch zu einer uniformen Permutation.
-- Trotzdem gibt es eine sehr starke lokale Struktur, weil komplette Blatt-Portionen zusammenhaengend ausgegeben werden.
-- Gleichzeitig kann die Prefix-Coverage sogar besser sein als bei einer uniformen Permutation, weil ein Blatt Werte aus weit auseinanderliegenden Bereichen enthalten kann.
-- Die gecachte Levels-Variante mischt genau diese lokale Struktur zusaetzlich auf, ohne den Baum selbst zu ersetzen.
+- The first position is nearly uniform.
+- The global inversion rate is likewise almost identical to that of a uniform permutation.
+- Yet there is very strong local structure, because complete leaf portions are output contiguously.
+- At the same time the prefix coverage can even be better than for a uniform permutation, because a leaf can contain values from widely separated parts of the number space.
+- The cached levels variant additionally shuffles exactly this local structure without replacing the tree itself.
 
-### Beispielergebnisse aus `npm run simulate:round-robin-quality`
+### Example Results from `npm run simulate:round-robin-quality`
 
 | n | fixedX | xValues | fixedEntropyBits | levelsEntropyBits | uniformEntropyBits | fixedInversionDelta | levelsInversionDelta | uniformInversionDelta | fixedPrefixCoverage | levelsPrefixCoverage | uniformPrefixCoverage | fixedLeafAdjacency | uniformFixedAdjacency |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -189,18 +187,18 @@ Die RoundRobin-Varianten lassen sich nicht mit nur einer einfachen Kennzahl sinn
 | 100 | 4 | 4, 3, 2 | 6.61 | 6.46 | 6.63 | 0.000 | 0.000 | 0.001 | 0.80 | 0.87 | 0.67 | 0.76 | 0.03 |
 | 250 | 8 | 8, 4, 2 | 7.93 | 7.93 | 7.93 | 0.000 | 0.000 | 0.000 | 1.00 | 1.00 | 0.94 | 0.88 | 0.03 |
 
-### Interpretation der neuen Kennzahlen
+### Interpretation of the New Metrics
 
-- Die erste Position ist bei beiden RoundRobin-Varianten leicht weniger entropisch als bei der uniformen Referenz, aber der Unterschied ist klein.
-- Die Inversionsrate ist bei allen drei Verfahren praktisch `0.5`. Diese Kennzahl allein erkennt den RoundRobin-Bias also kaum.
-- Die Prefix-Coverage der ersten `k` Werte ist bei den RoundRobin-Varianten in den gezeigten Szenarien sogar besser als bei der uniformen Referenz. Das liegt daran, dass ein Blatt Werte aus weit auseinanderliegenden Bereichen des Zahlenraums enthalten kann.
-- Die Blatt-Clusterung trennt die Verfahren sehr deutlich. Bei `n = 100` liegt sie bei etwa `0.76` fuer beide RoundRobin-Varianten, aber nur bei etwa `0.03` fuer eine uniforme Permutation.
+- The first position is slightly less entropic for both round-robin variants than for the uniform reference, but the difference is small.
+- The inversion rate is practically `0.5` for all three methods. This metric alone therefore barely detects the round-robin bias.
+- The prefix coverage of the first `k` values is in the shown scenarios even better for the round-robin variants than for the uniform reference. This is because a leaf can contain values from widely separated parts of the number space.
+- Leaf clustering separates the methods very clearly. At `n = 100` it is approximately `0.76` for both round-robin variants, but only about `0.03` for a uniform permutation.
 
-### Gecachte Levels-Variante
+### Cached Levels Variant
 
-Die neue Variante in [src/roundRobinTreeRandomNumberByLevelsWithCache.ts](src/roundRobinTreeRandomNumberByLevelsWithCache.ts) setzt auf jeder Ebene einen `numberCache` ein. Dadurch bleibt die baumartige Struktur erhalten, aber die direkte Verkettung kompletter Blatt-Portionen wird stark aufgebrochen.
+The new variant in [src/roundRobinTreeRandomNumberByLevelsWithCache.ts](src/roundRobinTreeRandomNumberByLevelsWithCache.ts) applies a `numberCache` at each level. This preserves the tree structure while strongly breaking up the direct chaining of complete leaf portions.
 
-Beispielergebnisse aus `npm run simulate:round-robin-quality`:
+Example results from `npm run simulate:round-robin-quality`:
 
 | n | xValues | cacheSize | levelsEntropyBits | cachedLevelsEntropyBits | uniformEntropyBits | levelsPrefixCoverage | cachedLevelsPrefixCoverage | uniformPrefixCoverage | levelsLeafAdjacency | cachedLevelsLeafAdjacency | uniformLevelsAdjacency |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -210,303 +208,304 @@ Beispielergebnisse aus `npm run simulate:round-robin-quality`:
 
 Interpretation:
 
-- Die Blatt-Clusterung sinkt drastisch. Bei `n = 100` faellt sie von `0.76` auf `0.18`.
-- Die Entropie der ersten Position steigt auf das Niveau der uniformen Referenz oder sehr nahe daran.
-- Die Prefix-Coverage bleibt hoch, sinkt aber gegenueber der ungecacheten Levels-Variante etwas ab. Das ist der erwartbare Preis fuer die zusaetzliche Durchmischung.
-- Die Inversionsrate bleibt weiterhin nahe `0.5`; auch mit Cache ist das also keine trennscharfe Kennzahl.
+- Leaf clustering drops drastically. At `n = 100` it falls from `0.76` to `0.18`.
+- The entropy of the first position rises to the level of the uniform reference, or very close to it.
+- Prefix coverage stays high but decreases somewhat compared to the uncached levels variant. That is the expected price for the additional shuffling.
+- The inversion rate remains close to `0.5`; even with a cache this is therefore not a discriminating metric.
 
-### Sweep ueber verschiedene Cache-Groessen
+### Sweep over Different Cache Sizes
 
-Um einen brauchbaren Kompromiss nicht nur fuer einen einzelnen Wert von `cacheSize`, sondern systematisch zu finden, gibt es jetzt eine eigene Sweep-Simulation in [src/roundRobinCacheSweepSimulation.ts](src/roundRobinCacheSweepSimulation.ts).
+To find a good compromise not just for a single value of `cacheSize` but systematically, there is now a dedicated sweep simulation in [src/roundRobinCacheSweepSimulation.ts](src/roundRobinCacheSweepSimulation.ts).
 
-Die Idee ist:
+The idea is:
 
-- Fuer eine feste Baumstruktur werden mehrere `cacheSize`-Werte durchprobiert.
-- Standardmaessig werden diese Werte jetzt automatisch als Zweierpotenzen erzeugt.
-- Fuer jeden Wert werden dieselben Kennzahlen wie zuvor gemessen.
-- Zusaetzlich wird ein Kompromiss-Score berechnet.
+- For a fixed tree structure, several `cacheSize` values are tested.
+- By default these values are now automatically generated as powers of two.
+- For each value the same metrics as before are measured.
+- In addition a compromise score is computed.
 
-Die automatische Obergrenze ist eine pragmatische Heuristik:
+The automatic upper bound is a pragmatic heuristic:
 
 $$
 \min\left(n, 2^{\lceil \log_2(\max(x_0, \lceil \sqrt{n} \rceil)) \rceil}\right)
 $$
 
-Dabei ist `x_0` die Portionsgroesse der untersten Ebene. Die Idee dahinter:
+Here `x_0` is the portion size of the lowest level. The reasoning:
 
-- der Sweep soll gross genug sein, um ueber die Blattgroesse hinaus zu testen,
-- aber nicht unnoetig weit laufen,
-- und trotzdem nur logarithmisch viele Kandidaten erzeugen.
+- the sweep should be large enough to test beyond the leaf size,
+- but not run unnecessarily far,
+- and still produce only logarithmically many candidates.
 
-Fuer die aktuell gezeigten Beispiele ergibt das automatisch:
+For the examples currently shown this automatically gives:
 
-- bei `n = 100`, `xValues = [4, 3, 2]` die Kandidaten `1, 2, 4, 8, 16`
-- bei `n = 250`, `xValues = [8, 4, 2]` die Kandidaten `1, 2, 4, 8, 16`
+- for `n = 100`, `xValues = [4, 3, 2]` the candidates `1, 2, 4, 8, 16`
+- for `n = 250`, `xValues = [8, 4, 2]` the candidates `1, 2, 4, 8, 16`
 
-Der Kompromiss-Score basiert auf genau den beiden Zielen, die sich gegenseitig behindern:
+The compromise score is based on exactly the two goals that compete with each other:
 
-- moeglichst viel Prefix-Coverage-Vorteil gegenueber uniform behalten
-- moeglichst viel Blatt-Clusterung gegenueber der ungecacheten Levels-Variante abbauen
+- retaining as much prefix-coverage advantage over uniform as possible
+- reducing as much leaf clustering compared to the uncached levels variant as possible
 
-Formal wird dafuer gemessen:
+Formally, the following are measured:
 
-- `prefixRetention`: wie viel des Prefix-Coverage-Vorteils der ungecacheten Levels-Variante gegenueber uniform erhalten bleibt
-- `leafReduction`: wie viel des Blatt-Clusterungs-Ueberschusses der ungecacheten Levels-Variante gegenueber uniform abgebaut wird
+- `prefixRetention`: how much of the uncached levels variant's prefix-coverage advantage over uniform is preserved
+- `leafReduction`: how much of the uncached levels variant's leaf-clustering excess over uniform is eliminated
 
-Dann gilt:
+Then:
 
 $$
-	ext{compromiseScore} = \frac{\text{prefixRetention} + \text{leafReduction}}{2}
+\text{compromiseScore} = \frac{\text{prefixRetention} + \text{leafReduction}}{2}
 $$
 
-Ein hoeherer Wert bedeutet also einen besseren Kompromiss zwischen frueher globaler Streuung und schwacher lokaler Clusterung.
+A higher value therefore means a better compromise between early global spread and weak local clustering.
 
-Aktuelle Beispiele aus `npm run simulate:round-robin-cache-sweep`:
+Current examples from `npm run simulate:round-robin-cache-sweep`:
 
-| n | xValues | getestete cacheSize-Werte | empfohlener cacheSize |
+| n | xValues | tested cacheSize values | recommended cacheSize |
 | --- | --- | --- | --- |
 | 100 | 4, 3, 2 | 1, 2, 4, 8, 16 | 4 |
 | 250 | 8, 4, 2 | 1, 2, 4, 8, 16 | 16 |
 
 Interpretation:
 
-- Kleine Caches behalten mehr Prefix-Coverage, reduzieren die Blatt-Clusterung aber nur wenig.
-- Sehr grosse Caches brechen die Blatt-Clusterung stark auf, verlieren aber einen Teil des Prefix-Coverage-Vorteils.
-- Der beste Kompromiss liegt daher typischerweise in einem mittleren Bereich und nicht bei den Extremen.
-- In den gezeigten Szenarien liegt dieser Kompromiss bei `cacheSize = 4` fuer `n = 100` und bei `cacheSize = 16` fuer `n = 250`.
+- Small caches retain more prefix coverage but reduce leaf clustering only slightly.
+- Very large caches break up leaf clustering strongly but lose some of the prefix-coverage advantage.
+- The best compromise therefore typically lies in a middle range rather than at the extremes.
+- In the shown scenarios this compromise falls at `cacheSize = 4` for `n = 100` and at `cacheSize = 16` for `n = 250`.
 
-Damit ergibt sich ein klares Bild:
+This gives a clear picture:
 
-- Global wirken die RoundRobin-Varianten auf den ersten Blick relativ gut.
-- Lokal sind sie stark strukturiert.
-- Wer moeglichst wenig unmittelbare Nachbarschaftsstruktur will, braucht weiterhin die uniforme Variante.
-- Wer fruehe Streuung ueber den Zahlenraum schaetzt und die Blockstruktur akzeptiert, bekommt mit den RoundRobin-Varianten ein interessantes Mittelmodell.
-- Die gecachte Levels-Variante ist ein sinnvoller Kompromiss: deutlich weniger lokale Blatt-Clusterung als die ungecachete Levels-Variante, aber weiterhin weniger Speicherbedarf als eine vollstaendig uniforme Permutation.
-- Mit dem Sweep laesst sich dieser Kompromiss fuer konkrete Werte von `n`, `xValues` und `trials` gezielt abstimmen.
+- Globally the round-robin variants look relatively good at first glance.
+- Locally they are strongly structured.
+- Anyone who wants as little immediate neighbourhood structure as possible still needs the uniform variant.
+- Anyone who values early spread across the number space and accepts the block structure gets an interesting middle model from the round-robin variants.
+- The cached levels variant is a sensible compromise: considerably less local leaf clustering than the uncached levels variant, but still less memory usage than a fully uniform permutation.
+- With the sweep this compromise can be fine-tuned for concrete values of `n`, `xValues`, and `trials`.
 
-## Laufzeit und Speicherverbrauch in O-Notation
+## Time and Space Complexity in O-Notation
 
-Im Folgenden bezeichne ich mit `N` die Gesamtzahl der auszugebenden Werte.
+In the following I use `N` to denote the total number of values to be output.
 
-- Fuer den Cache-Ansatz aus [src/index.ts](src/index.ts) ist `N = x`.
-- Fuer die RoundRobin-Varianten ist `N = n`.
-- Ich nehme an, dass ein Aufruf der Zufallsquelle, ein Array-Zugriff und ein einfacher Tausch jeweils `O(1)` kosten.
+- For the cache approach from [src/index.ts](src/index.ts), `N = x`.
+- For the round-robin variants, `N = n`.
+- I assume that a call to the random source, an array access, and a simple swap each cost `O(1)`.
 
-Die wichtigste Unterscheidung ist dabei:
+The most important distinction is:
 
-- Kosten pro einzelnem `next()`-Aufruf koennen punktuell groesser sein, wenn gerade ein Cache nachgefuellt oder eine neue Portion aufgebaut werden muss.
-- Interessanter ist hier daher die amortisierte Kosten pro ausgegebenem Wert und die Gesamtkosten fuer die vollstaendige Folge.
+- The cost per individual `next()` call can be punctually higher if a cache happens to be refilled or a new portion built at that moment.
+- More informative here is therefore the amortised cost per output value and the total cost for the complete sequence.
 
-### Uebersicht
+### Overview
 
-| Variante | amortisierte Zeit pro Wert | Gesamtlaufzeit fuer alle `N` Werte | zusaetzlicher Speicher |
+| Variant | amortised time per value | total runtime for all `N` values | additional memory |
 | --- | --- | --- | --- |
-| Sequentielle Quelle `useNextSequentialNumber` | `O(1)` | `O(N)` | `O(1)` |
-| Cache-Generator `useNextNonRepeatingRandomNumber(N, y)` | `O(1)` | `O(N)` | `O(min(N, y))` |
-| Uniforme Variante `useNextUniformRandomNumber(N)` | `O(1)` nach Vorbereitung | `O(N)` | `O(N)` |
-| RoundRobin-Baum mit festem `x` | `O(1)` amortisiert | `O(N)` fuer konstantes `x >= 2` | `O(x \log_x N)` |
-| RoundRobin-Baum mit `xValues` | `O(1)` amortisiert im ueblichen Fall | `O\left(\sum_i m_i\right)` | `O\left(\sum_i \min(m_i, b_i)\right)` |
-| Gecachter RoundRobin-Baum mit `xValues` und `cacheSize = c` | `O(1)` amortisiert im ueblichen Fall | `O\left(\sum_i m_i\right)` | `O\left(\sum_i (\min(m_i, b_i) + \min(m_i, c))\right)` |
+| Sequential source `useNextSequentialNumber` | `O(1)` | `O(N)` | `O(1)` |
+| Cache generator `useNextNonRepeatingRandomNumber(N, y)` | `O(1)` | `O(N)` | `O(min(N, y))` |
+| Uniform variant `useNextUniformRandomNumber(N)` | `O(1)` after setup | `O(N)` | `O(N)` |
+| Round-robin tree with fixed `x` | `O(1)` amortised | `O(N)` for constant `x >= 2` | $O(x \log_x N)$ |
+| Round-robin tree with `xValues` | `O(1)` amortised in the typical case | $O\left(\sum_i m_i\right)$ | $O\left(\sum_i \min(m_i, b_i)\right)$ |
+| Cached round-robin tree with `xValues` and `cacheSize = c` | `O(1)` amortised in the typical case | $O\left(\sum_i m_i\right)$ | $O\left(\sum_i (\min(m_i, b_i) + \min(m_i, c))\right)$ |
 
-Fuer die letzten beiden Zeilen gilt:
+For the last two rows:
 
-- `m_0 = N`
-- `b_i = xValues[min(i, xValues.length - 1)]`
-- `m_{i+1} = \lceil m_i / b_i \rceil`
+- $m_0 = N$
+- $b_i = \text{xValues}[\min(i, \text{xValues.length} - 1)]$
+- $m_{i+1} = \lceil m_i / b_i \rceil$
 
-`m_i` ist also die Problemgroesse auf Ebene `i`, und `b_i` ist die dort verwendete Portionsbreite.
+$m_i$ is the problem size at level $i$, and $b_i$ is the portion width used there.
 
-### 1. Sequentielle Quelle in `src/index.ts`
+### 1. Sequential Source in `src/index.ts`
 
-`useNextSequentialNumber(x)` haelt nur einen einzigen Zaehler `nextNumber`.
+`useNextSequentialNumber(x)` maintains only a single counter `nextNumber`.
 
-Pro Aufruf passiert genau folgendes:
+Each call does exactly the following:
 
-- Grenzpruefung
-- Rueckgabe des aktuellen Werts
-- Inkrement des Zaehlerstands
+- bounds check
+- return the current value
+- increment the counter
 
-Jeder dieser Schritte ist konstant teuer. Daher gilt:
+Each of these steps has constant cost. Therefore:
 
-- pro Wert `O(1)`
-- fuer alle `N` Werte zusammen `O(N)`
-- Speicher `O(1)`
+- `O(1)` per value
+- `O(N)` for all `N` values together
+- `O(1)` memory
 
-Das ist die triviale Baseline.
+This is the trivial baseline.
 
-### 2. Cache-Ansatz in `src/index.ts`
+### 2. Cache Approach in `src/index.ts`
 
-Bei `useNextNonRepeatingRandomNumber(N, y)` werden sequentielle Werte in einen Cache der Groesse `y` eingespeist und daraus zufaellig entnommen.
+With `useNextNonRepeatingRandomNumber(N, y)` sequential values are fed into a cache of size `y` and drawn from it at random.
 
-Warum bleibt die Gesamtlaufzeit linear?
+Why does the total runtime stay linear?
 
-- Jeder Wert wird von der sequentiellen Quelle genau einmal erzeugt.
-- Jeder Wert wird genau einmal in den Cache gelegt.
-- Jeder Wert wird genau einmal aus dem Cache entnommen.
-- Beim Entnehmen fallen nur konstante Array-Operationen an: Index bestimmen, lesen, eventuell ersetzen oder mit dem letzten Element tauschen und `pop()`.
+- Each value is produced by the sequential source exactly once.
+- Each value is placed in the cache exactly once.
+- Each value is taken from the cache exactly once.
+- Taking a value only involves constant array operations: determine index, read, optionally replace or swap with the last element and `pop()`.
 
-Damit wird jeder der `N` Werte nur eine konstante Anzahl von Malen angefasst. Also:
+Each of the `N` values is therefore touched only a constant number of times. Hence:
 
-- Gesamtlaufzeit `O(N)`
-- amortisiert pro Wert `O(1)`
+- Total runtime `O(N)`
+- Amortised `O(1)` per value
 
-Der Speicherverbrauch ergibt sich direkt aus der Cache-Groesse:
+The memory usage follows directly from the cache size:
 
-- der Cache enthaelt nie mehr als `y` Werte
-- insgesamt gibt es aber nur `N` Werte
+- the cache never holds more than `y` values
+- but there are only `N` values in total
 
-Also ist der Peak-Speicher
+So the peak memory is
 
 $$
 O(\min(N, y))
 $$
 
-und fuer den ueblichen Fall `y <= N` einfach `O(y)`.
+and for the usual case `y <= N` simply `O(y)`.
 
-Ein einzelner frueher `next()`-Aufruf kann zwar `O(min(N, y))` kosten, weil der Cache initial befuellt wird, aber ueber die komplette Folge gemittelt bleibt es `O(1)` pro Wert.
+A single early `next()` call can cost `O(min(N, y))` because the cache is initially filled, but averaged over the complete sequence it remains `O(1)` per value.
 
-### 3. Uniforme Variante in `src/uniformRandomNumber.ts`
+### 3. Uniform Variant in `src/uniformRandomNumber.ts`
 
-Hier wird zuerst ein Array mit allen `N` Zahlen aufgebaut und dann per Fisher-Yates gemischt.
+Here an array of all `N` numbers is built first and then shuffled with Fisher-Yates.
 
-Die Herleitung ist direkt:
+The derivation is direct:
 
-- das Aufbauen des Arrays kostet `O(N)`
-- Fisher-Yates durchlaeuft das Array einmal rueckwaerts und macht pro Position nur einen konstant teuren Swap, also ebenfalls `O(N)`
-- die spaetere Ausgabe ist nur noch ein sequentielles Weiterlesen aus dem gemischten Array, also `O(1)` pro Wert
+- building the array costs `O(N)`
+- Fisher-Yates traverses the array once backwards and performs only one constant-cost swap per position, so also `O(N)`
+- subsequent output is simply sequential reading from the shuffled array, so `O(1)` per value
 
-Damit gilt insgesamt:
+Total:
 
-- Gesamtlaufzeit `O(N)`
-- Speicher `O(N)`
+- Total runtime `O(N)`
+- Memory `O(N)`
 
-Die uniforme Variante ist also asymptotisch zeitlich nicht schlechter als der Cache-Ansatz, bezahlt die bessere Verteilungsqualitaet aber mit linearem Speicher.
+The uniform variant is therefore asymptotically no worse in time than the cache approach, but it pays for the better distribution quality with linear memory.
 
-### 4. RoundRobin-Baum mit festem `x`
+### 4. Round-Robin Tree with Fixed `x`
 
-Bei [src/roundRobinTreeRandomNumber.ts](src/roundRobinTreeRandomNumber.ts) wird das Problem rekursiv verkleinert.
+In [src/roundRobinTreeRandomNumber.ts](src/roundRobinTreeRandomNumber.ts) the problem is reduced recursively.
 
-Auf einer Ebene mit Problemgroesse `m` passiert Folgendes:
+At a level with problem size `m` the following happens:
 
-- Es werden `\lceil m / x \rceil` Portionen definiert.
-- Ueber alle Portionen zusammen wird jedes der `m` Elemente genau einmal in genau eine Portion geschrieben.
-- Jede Portion wird lokal gemischt.
-- Danach werden die Portionen der Reihe nach ausgegeben.
+- $\lceil m / x \rceil$ portions are defined.
+- Across all portions together each of the `m` elements is written into exactly one portion.
+- Each portion is shuffled locally.
+- The portions are then output one by one.
 
-Die gesamte Arbeit einer Ebene ist daher `O(m)`, nicht `O(m \cdot x)`, weil sich die Portionen nicht ueberlappen und zusammen genau `m` Elemente enthalten.
+The total work of a level is therefore `O(m)`, not `O(m · x)`, because the portions do not overlap and together contain exactly `m` elements.
 
-Damit ergibt sich fuer `x >= 2` die Rekurrenz
+For `x >= 2` this gives the recurrence
 
 $$
 T(m) = T(\lceil m / x \rceil) + O(m)
 $$
 
-und damit
+and therefore
 
 $$
 T(N) = O\left(N + \frac{N}{x} + \frac{N}{x^2} + \dots\right) = O(N)
 $$
 
-weil die Reihe geometrisch faellt.
+because the series decays geometrically.
 
-Zum Speicher:
+On memory:
 
-- jede Ebene haelt hoechstens eine aktuelle Portion
-- diese Portion hat Groesse hoechstens `x`
-- die Anzahl aktiver Ebenen ist `O(\log_x N)`
+- each level holds at most one current portion
+- this portion has size at most `x`
+- the number of active levels is $O(\log_x N)$
 
-Also gilt fuer `x >= 2`:
+So for `x >= 2`:
 
 $$
 O(x \log_x N)
 $$
 
-Fuer konstantes `x` wird daraus `O(\log N)` zusaetzlicher Speicher.
+For constant `x` this becomes `O(log N)` additional memory.
 
-Sonderfall `x = 1`:
+Special case `x = 1`:
 
-- dann faellt die Implementierung auf die sequentielle Quelle zurueck
-- Laufzeit also `O(N)`
-- Speicher `O(1)`
+- the implementation falls back to the sequential source
+- runtime therefore `O(N)`
+- memory `O(1)`
 
-### 5. RoundRobin-Baum mit `xValues`
+### 5. Round-Robin Tree with `xValues`
 
-Bei [src/roundRobinTreeRandomNumberByLevels.ts](src/roundRobinTreeRandomNumberByLevels.ts) kann jede Ebene eine andere Portionsbreite haben.
+In [src/roundRobinTreeRandomNumberByLevels.ts](src/roundRobinTreeRandomNumberByLevels.ts) each level can have a different portion width.
 
-Wenn `b_i` die Portionsbreite der Ebene `i` ist und `m_i` die jeweilige Problemgroesse, dann kostet Ebene `i` wieder `O(m_i)`, aus genau demselben Grund wie oben: jedes Element dieser Ebene wird genau einmal in eine Portion gelegt, lokal gemischt und spaeter einmal ausgegeben.
+If $b_i$ is the portion width at level $i$ and $m_i$ the corresponding problem size, then level $i$ again costs `O(m_i)` for exactly the same reason as above: every element of that level is placed into exactly one portion, shuffled locally, and later output exactly once.
 
-Die Gesamtlaufzeit ist daher
+The total runtime is therefore
 
 $$
 O\left(\sum_i m_i\right)
 $$
 
-Das ist die sauberste allgemeine Form.
+This is the cleanest general form.
 
-Im typischen Fall, dass die Baumstruktur wirklich schrumpft, also ab irgendeinem Punkt immer `b_i >= 2` gilt, faellt `m_i` geometrisch und damit folgt wieder:
+In the typical case where the tree really does shrink — i.e. $b_i \geq 2$ holds from some point onwards — $m_i$ falls geometrically and consequently:
 
 $$
 O(N)
 $$
 
-Warum schreibe ich hier trotzdem die Summenform hin? Weil `xValues` auch `1` enthalten darf. Wenn mehrere fruehe Ebenen `b_i = 1` haben, schrumpft das Problem dort noch nicht, und jede solche Ebene kostet noch einmal `O(N)`. Die Summenform macht genau das sichtbar.
+Why write the sum form here at all? Because `xValues` may also contain `1`. If several early levels have $b_i = 1$, the problem does not yet shrink there, and each such level costs another `O(N)`. The sum form makes exactly that visible.
 
-Der Speicherverbrauch ist die Summe der gleichzeitig gehaltenen Portionen:
+The memory usage is the sum of the simultaneously held portions:
 
 $$
 O\left(\sum_i \min(m_i, b_i)\right)
 $$
 
-Denn auf Ebene `i` ist die aktuelle Portion nie groesser als die lokale Portionsbreite `b_i`, aber natuerlich auch nie groesser als das Restproblem `m_i`.
+At level $i$ the current portion is never larger than the local portion width $b_i$, but also never larger than the remaining problem $m_i$.
 
-Im haeufigen Fall fester, kleiner `xValues` mit echter Schrumpfung auf jeder Ebene ergibt sich daraus praktisch logarithmischer Speicherverbrauch in `N`.
+In the common case of fixed, small `xValues` with genuine shrinkage at every level, this amounts in practice to logarithmic memory usage in `N`.
 
-### 6. Gecachter RoundRobin-Baum
+### 6. Cached Round-Robin Tree
 
-Bei [src/roundRobinTreeRandomNumberByLevelsWithCache.ts](src/roundRobinTreeRandomNumberByLevelsWithCache.ts) kommt auf jeder Ebene noch ein `numberCache` mit Groesse `c` dazu.
+In [src/roundRobinTreeRandomNumberByLevelsWithCache.ts](src/roundRobinTreeRandomNumberByLevelsWithCache.ts) an additional `numberCache` of size `c` is added at each level.
 
-Zeitlich aendert das asymptotisch weniger, als man zunaechst vermuten koennte:
+In terms of time this changes asymptotic behaviour less than one might initially expect:
 
-- Die zugrunde liegende Ebenenquelle produziert weiterhin genau `m_i` Werte.
-- Jeder dieser Werte wird auf Ebene `i` zusaetzlich genau einmal in den Cache eingelegt und genau einmal wieder entnommen.
-- Diese Cache-Operationen sind jeweils konstant teuer.
+- The underlying level source still produces exactly $m_i$ values.
+- Each of these values is additionally placed into the cache at level $i$ exactly once and taken out exactly once.
+- These cache operations each cost `O(1)`.
 
-Damit bleibt die Zeit pro Ebene `O(m_i)`, nur mit einer groesseren Konstanten. Insgesamt also wieder:
+The time per level therefore remains $O(m_i)$, just with a larger constant. Overall again:
 
 $$
 O\left(\sum_i m_i\right)
 $$
 
-und im ueblichen schrumpfenden Fall wieder `O(N)`.
+and in the usual shrinking case again `O(N)`.
 
-Beim Speicher kommt der Cache pro Ebene zusaetzlich zur aktuellen Portion hinzu. Daher:
+For memory, the cache per level adds to the current portion. Therefore:
 
 $$
 O\left(\sum_i (\min(m_i, b_i) + \min(m_i, c))\right)
 $$
 
-Im typischen Fall konstanter kleiner `xValues` und konstanter `cacheSize` bedeutet das weiterhin nur logarithmischen Speicher in `N`, aber mit einem groesseren konstanten Faktor als ohne Cache.
+In the typical case of constant small `xValues` and constant `cacheSize` this still means only logarithmic memory in `N`, but with a larger constant factor than without a cache.
 
-### Praktische Einordnung
+### Practical Assessment
 
-Die asymptotischen Unterschiede sind kleiner als die qualitativen Unterschiede der Verteilungen:
+The asymptotic differences are smaller than the qualitative differences in the distributions:
 
-- zeitlich liegen fast alle Generatoren fuer eine vollstaendige Folge bei `O(N)`
-- der wesentliche Unterschied liegt vor allem im Speicher
-- die uniforme Variante braucht `O(N)` Speicher
-- der einfache Cache-Ansatz braucht nur `O(y)`
-- die RoundRobin-Varianten liegen dazwischen und haengen von Ebenentiefe, Portionsbreiten und zusaetzlichem Cache ab
+- in terms of time almost all generators are at `O(N)` for a complete sequence
+- the essential difference lies above all in memory
+- the uniform variant requires `O(N)` memory
+- the simple cache approach requires only `O(y)`
+- the round-robin variants lie in between, depending on tree depth, portion widths, and additional cache
 
-Fuer die Wahl der Methode bedeutet das praktisch:
+For the choice of method this means in practice:
 
-- Wenn Speicher knapp ist, sind Cache- und RoundRobin-Verfahren attraktiv.
-- Wenn eine wirklich uniforme Permutation benoetigt wird, ist der lineare Speicher der Fisher-Yates-Variante der Preis fuer die saubere Statistik.
-- Wenn man eine Baumstruktur behalten, aber lokale Clusterung reduzieren will, ist die gecachte Levels-Variante asymptotisch weiterhin linear in der Zeit und meistens noch deutlich unter `O(N)` beim Speicher.
+- If memory is tight, cache and round-robin methods are attractive.
+- If a truly uniform permutation is required, the linear memory of the Fisher-Yates variant is the price for clean statistics.
+- If you want to preserve tree structure but reduce local clustering, the cached levels variant is still asymptotically linear in time and usually well below `O(N)` in memory.
 
-## Ausfuehrung
+## Running the Code
 
-- Cache-Ansatz demonstrieren: `npm start`
-- Uniforme Variante demonstrieren: `npm run start:uniform`
-- Bias-Simulation ausfuehren: `npm run simulate:bias`
-- RoundRobin-Qualitaet vergleichen: `npm run simulate:round-robin-quality`
-- Cache-Size-Sweep fuer RoundRobin ausfuehren: `npm run simulate:round-robin-cache-sweep`
+- Demonstrate cache approach: `npm start`
+- Demonstrate uniform variant: `npm run start:uniform`
+- Run bias simulation: `npm run simulate:bias`
+- Compare round-robin quality: `npm run simulate:round-robin-quality`
+- Run cache-size sweep for round-robin: `npm run simulate:round-robin-cache-sweep`
+
