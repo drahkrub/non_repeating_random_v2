@@ -1,73 +1,73 @@
 # non_repeating_random_v2
 
-Ein kleines TypeScript-Repo fuer Experimente mit nicht wiederholenden Zahlengeneratoren. Der Fokus liegt nicht nur auf "liefert jede Zahl genau einmal", sondern auch auf der Frage, wie gut verschiedene Verfahren die Zahlenfolge durchmischen.
+A small TypeScript repository for experiments with non-repeating number generators. The focus is not only on "delivers every number exactly once", but also on how well the different approaches shuffle the sequence.
 
-## Inhalt
+## Contents
 
-Das Repo enthaelt mehrere Generator-Familien fuer Werte `0..n-1` bzw. `0..x-1` ohne Wiederholung:
+The repository contains several generator families for values `0..n-1` and `0..x-1` without repetition:
 
-- `src/index.ts`: Basisbausteine. Enthalten sind eine sequentielle Quelle (`useNextSequentialNumber`), ein generischer Cache (`useNumberCache`) und die zusammengesetzte Cache-Variante `useNextNonRepeatingRandomNumber(x, y)`.
-- `src/uniformRandomNumber.ts`: uniforme Referenz auf Basis von Fisher-Yates. Diese Variante erzeugt eine echte uniforme Permutation, braucht dafuer aber Speicher `O(n)`.
-- `src/roundRobinTreeRandomNumber.ts`: rekursiver RoundRobin-Baum mit festem `x` auf allen Ebenen.
-- `src/roundRobinTreeRandomNumberByLevels.ts`: verallgemeinerter RoundRobin-Baum mit eigenen `x`-Werten pro Ebene.
-- `src/roundRobinTreeRandomNumberByLevelsWithCache.ts`: Levels-Variante mit zusaetzlichem Cache auf jeder Ebene, um lokale Clusterung aufzubrechen.
+- `src/index.ts`: Building blocks. Includes a sequential source (`useNextSequentialNumber`), a generic cache (`useNumberCache`), and the combined cache variant `useNextNonRepeatingRandomNumber(x, y)`.
+- `src/uniformRandomNumber.ts`: Uniform reference based on Fisher-Yates. This variant produces a truly uniform permutation, but requires `O(n)` memory.
+- `src/roundRobinTreeRandomNumber.ts`: Recursive round-robin tree with a fixed `x` at every level.
+- `src/roundRobinTreeRandomNumberByLevels.ts`: Generalised round-robin tree with individual `x` values per level.
+- `src/roundRobinTreeRandomNumberByLevelsWithCache.ts`: Levels variant with an additional cache at each level to break up local clustering.
 
-Daneben gibt es mehrere Simulations- und Analyseprogramme:
+There are also several simulation and analysis programs:
 
-- `src/cacheBiasSimulation.ts`: vergleicht die einfache Cache-Variante mit der uniformen Referenz.
-- `src/roundRobinQualitySimulation.ts`: vergleicht feste RoundRobin-, Levels-, gecachte Levels- und uniforme Variante.
-- `src/roundRobinCacheSweepSimulation.ts`: sweep ueber verschiedene `cacheSize`-Werte fuer die gecachte Levels-Variante und empfiehlt einen Kompromiss.
+- `src/cacheBiasSimulation.ts`: Compares the simple cache variant with the uniform reference.
+- `src/roundRobinQualitySimulation.ts`: Compares the fixed round-robin, levels, cached-levels, and uniform variants.
+- `src/roundRobinCacheSweepSimulation.ts`: Sweeps over different `cacheSize` values for the cached levels variant and recommends a compromise.
 
-## Wichtige Beobachtungen
+## Key Observations
 
-- Der einfache Cache-Ansatz ist fuer `x <= y` uniform, verliert aber fuer festes `y` und wachsendes `x` deutlich an Qualitaet.
-- Die uniforme Referenz ist statistisch sauber, braucht aber den meisten Speicher.
-- Die RoundRobin-Varianten zeigen oft gute globale Streuung, haben aber ohne Zusatzmassnahmen starke lokale Blatt-Clusterung.
-- Die gecachte Levels-Variante reduziert diese lokale Struktur deutlich und bildet damit einen brauchbaren Mittelweg.
+- The simple cache approach is uniform for `x <= y`, but loses quality noticeably for a fixed `y` and growing `x`.
+- The uniform reference is statistically sound but requires the most memory.
+- The round-robin variants often show good global spread, but without additional measures they exhibit strong local leaf clustering.
+- The cached levels variant reduces this local structure considerably and therefore represents a practical middle ground.
 
-## Projektstruktur
+## Project Structure
 
-- `src/`: Implementierungen und Simulationen
-- `test/`: Vitest-Suite fuer alle Generatoren und Simulationen
-- `Analysis.md`: laengere fachliche Auswertung der Verfahren, Kennzahlen und Simulationsergebnisse
-- `Feedback.md`: persoenliche Rueckschau auf den Verlauf des Projekts
+- `src/`: Implementations and simulations
+- `test/`: Vitest suite for all generators and simulations
+- `Analysis.md`: In-depth technical evaluation of the approaches, metrics, and simulation results
+- `Feedback.md`: Personal retrospective on the progress of the project
 
-## Schnellstart
+## Quick Start
 
-Voraussetzungen:
+Prerequisites:
 
 - Node.js
 - npm
 
-Installation und Standardchecks:
+Installation and standard checks:
 
 ```bash
 npm install
 npm test
 ```
 
-## NPM-Skripte
+## NPM Scripts
 
-- `npm start`: Basis-Caching-Demo aus `src/index.ts`
-- `npm run start:uniform`: uniforme Referenzdemo
-- `npm run start:round-robin-tree`: RoundRobin-Baum mit festem `x`
-- `npm run start:round-robin-tree-levels`: RoundRobin-Baum mit `xValues`
-- `npm run start:round-robin-tree-levels-cached`: Levels-Variante mit Cache auf jeder Ebene
-- `npm run simulate:bias`: Bias-Vergleich Cache vs. uniform
-- `npm run simulate:round-robin-quality`: Qualitaetsvergleich der RoundRobin-Familie
-- `npm run simulate:round-robin-cache-sweep`: automatische Suche nach einer brauchbaren `cacheSize`
-- `npm test`: komplette Testsuite
+- `npm start`: Basic caching demo from `src/index.ts`
+- `npm run start:uniform`: Uniform reference demo
+- `npm run start:round-robin-tree`: Round-robin tree with fixed `x`
+- `npm run start:round-robin-tree-levels`: Round-robin tree with `xValues`
+- `npm run start:round-robin-tree-levels-cached`: Levels variant with cache at each level
+- `npm run simulate:bias`: Bias comparison cache vs. uniform
+- `npm run simulate:round-robin-quality`: Quality comparison of the round-robin family
+- `npm run simulate:round-robin-cache-sweep`: Automatic search for a suitable `cacheSize`
+- `npm test`: Complete test suite
 
 ## Tests
 
-Die Tests pruefen insbesondere:
+The tests verify in particular:
 
-- Korrektheit der Generatoren und Erschoepfung ohne Wiederholung
-- Eingabevalidierung und Fehlerfaelle
-- deterministische Szenarien mit kontrollierter Zufallsquelle
-- Qualitaetsmetriken und Sweep-Logik der Simulationen
-- grosse Integritaetsfaelle fuer die RoundRobin-Generatoren
+- Correctness of the generators and exhaustion without repetition
+- Input validation and error cases
+- Deterministic scenarios with a controlled random source
+- Quality metrics and sweep logic of the simulations
+- Large integrity cases for the round-robin generators
 
-## Kurzfazit
+## Summary
 
-Das Repo ist kein generisches Utility-Paket, sondern ein exploratives Arbeitsrepo. Es dokumentiert verschiedene Wege, nicht wiederholende Zahlenfolgen zu erzeugen, und macht ihre qualitativen Unterschiede ueber Tests, Demos und Simulationen sichtbar.
+This repository is not a generic utility package, but an exploratory working repository. It documents different ways to generate non-repeating number sequences and makes their qualitative differences visible through tests, demos, and simulations.
