@@ -3,12 +3,14 @@ import { pathToFileURL } from 'node:url';
 import { collectSequence, createSeededRandom } from './cacheBiasSimulation.js';
 import { useNextRoundRobinTreeRandomNumber as useFixedRoundRobinTreeRandomNumber } from './roundRobinTreeRandomNumber.js';
 import { useNextRoundRobinTreeRandomNumber as useLevelRoundRobinTreeRandomNumber } from './roundRobinTreeRandomNumberByLevels.js';
+import { useNextRoundRobinTreeRandomNumberWithCache } from "./roundRobinTreeRandomNumberByLevelsWithCache.js";
 import { useNextUniformRandomNumber } from './uniformRandomNumber.js';
 
 export interface RoundRobinQualityScenario {
   n: number;
   fixedX: number;
   xValues: readonly number[];
+  cacheSize: number;
   trials: number;
 }
 
@@ -30,14 +32,17 @@ export interface RoundRobinQualityResult {
   n: number;
   fixedX: number;
   xValues: readonly number[];
+  cacheSize: number;
   trials: number;
   prefixLength: number;
   prefixBucketCount: number;
   fixed: RoundRobinAlgorithmMetrics;
   levels: RoundRobinAlgorithmMetrics;
+  cachedLevels: RoundRobinAlgorithmMetrics;
   uniform: RoundRobinAlgorithmMetrics;
   fixedLeafAdjacency: LeafAdjacencyMetrics;
   levelsLeafAdjacency: LeafAdjacencyMetrics;
+  cachedLevelsLeafAdjacency: LeafAdjacencyMetrics;
 }
 
 interface MetricsTracker {
@@ -58,6 +63,7 @@ function assertPositiveInteger(value: number, parameterName: string): void {
 function assertScenario(scenario: RoundRobinQualityScenario): void {
   assertPositiveInteger(scenario.n, 'n');
   assertPositiveInteger(scenario.fixedX, 'fixedX');
+  assertPositiveInteger(scenario.cacheSize, "cacheSize");
   assertPositiveInteger(scenario.trials, 'trials');
 
   if (scenario.xValues.length === 0) {
@@ -229,9 +235,11 @@ export function runRoundRobinQualitySimulation(
 
   const fixedRandom = randomFactory(seed);
   const levelsRandom = randomFactory(seed ^ 0x9e3779b9);
+  const cachedLevelsRandom = randomFactory(seed ^ 0x4f1bbcdc);
   const uniformRandom = randomFactory(seed ^ 0x85ebca6b);
   const uniformForFixedRandom = randomFactory(seed ^ 0xc2b2ae35);
   const uniformForLevelsRandom = randomFactory(seed ^ 0x27d4eb2f);
+  const uniformForCachedLevelsRandom = randomFactory(seed ^ 0x165667b1);
   const fixedLeafPortionId = createLeafPortionIdGetter(scenario.n, scenario.fixedX);
   const levelsLeafPortionId = createLeafPortionIdGetter(scenario.n, scenario.xValues[0]);
   const prefixBucketCount = Math.min(10, scenario.n);
@@ -250,6 +258,21 @@ export function runRoundRobinQualitySimulation(
     scenario.trials,
     (random) => useLevelRoundRobinTreeRandomNumber(scenario.n, scenario.xValues, random),
     levelsRandom,
+    levelsLeafPortionId,
+    prefixLength,
+    prefixBucketCount,
+  );
+  const cachedLevels = simulateAlgorithm(
+    scenario.n,
+    scenario.trials,
+    (random) =>
+      useNextRoundRobinTreeRandomNumberWithCache(
+        scenario.n,
+        scenario.xValues,
+        scenario.cacheSize,
+        random,
+      ),
+    cachedLevelsRandom,
     levelsLeafPortionId,
     prefixLength,
     prefixBucketCount,
@@ -281,16 +304,27 @@ export function runRoundRobinQualitySimulation(
     prefixLength,
     prefixBucketCount,
   );
+  const uniformForCachedLevels = simulateAlgorithm(
+    scenario.n,
+    scenario.trials,
+    (random) => useNextUniformRandomNumber(scenario.n, random),
+    uniformForCachedLevelsRandom,
+    levelsLeafPortionId,
+    prefixLength,
+    prefixBucketCount,
+  );
 
   return {
     n: scenario.n,
     fixedX: scenario.fixedX,
     xValues: scenario.xValues,
+    cacheSize: scenario.cacheSize,
     trials: scenario.trials,
     prefixLength,
     prefixBucketCount,
     fixed: fixed.metrics,
     levels: levels.metrics,
+    cachedLevels: cachedLevels.metrics,
     uniform: uniform.metrics,
     fixedLeafAdjacency: {
       algorithmRate: fixed.leafAdjacencyRate,
@@ -299,6 +333,10 @@ export function runRoundRobinQualitySimulation(
     levelsLeafAdjacency: {
       algorithmRate: levels.leafAdjacencyRate,
       uniformRate: uniformForLevels.leafAdjacencyRate,
+    },
+    cachedLevelsLeafAdjacency: {
+      algorithmRate: cachedLevels.leafAdjacencyRate,
+      uniformRate: uniformForCachedLevels.leafAdjacencyRate,
     },
   };
 }
@@ -309,34 +347,67 @@ export function formatRoundRobinQualityRow(
   return {
     n: result.n,
     fixedX: result.fixedX,
-    xValues: result.xValues.join(', '),
+    xValues: result.xValues.join(", "),
+    cacheSize: result.cacheSize,
     trials: result.trials,
     prefixLength: result.prefixLength,
     prefixBuckets: result.prefixBucketCount,
     fixedFirstValues: `${result.fixed.observedFirstValueSupport}/${result.n}`,
     levelsFirstValues: `${result.levels.observedFirstValueSupport}/${result.n}`,
+    cachedLevelsFirstValues: `${result.cachedLevels.observedFirstValueSupport}/${result.n}`,
     uniformFirstValues: `${result.uniform.observedFirstValueSupport}/${result.n}`,
     fixedEntropyBits: Number(result.fixed.firstValueEntropyBits.toFixed(2)),
     levelsEntropyBits: Number(result.levels.firstValueEntropyBits.toFixed(2)),
+    cachedLevelsEntropyBits: Number(
+      result.cachedLevels.firstValueEntropyBits.toFixed(2),
+    ),
     uniformEntropyBits: Number(result.uniform.firstValueEntropyBits.toFixed(2)),
-    fixedInversionDelta: Number(result.fixed.inversionDeviationFromHalf.toFixed(3)),
-    levelsInversionDelta: Number(result.levels.inversionDeviationFromHalf.toFixed(3)),
-    uniformInversionDelta: Number(result.uniform.inversionDeviationFromHalf.toFixed(3)),
+    fixedInversionDelta: Number(
+      result.fixed.inversionDeviationFromHalf.toFixed(3),
+    ),
+    levelsInversionDelta: Number(
+      result.levels.inversionDeviationFromHalf.toFixed(3),
+    ),
+    cachedLevelsInversionDelta: Number(
+      result.cachedLevels.inversionDeviationFromHalf.toFixed(3),
+    ),
+    uniformInversionDelta: Number(
+      result.uniform.inversionDeviationFromHalf.toFixed(3),
+    ),
     fixedPrefixCoverage: Number(result.fixed.prefixBucketCoverage.toFixed(2)),
     levelsPrefixCoverage: Number(result.levels.prefixBucketCoverage.toFixed(2)),
-    uniformPrefixCoverage: Number(result.uniform.prefixBucketCoverage.toFixed(2)),
-    fixedLeafAdjacency: Number(result.fixedLeafAdjacency.algorithmRate.toFixed(2)),
-    uniformFixedAdjacency: Number(result.fixedLeafAdjacency.uniformRate.toFixed(2)),
-    levelsLeafAdjacency: Number(result.levelsLeafAdjacency.algorithmRate.toFixed(2)),
-    uniformLevelsAdjacency: Number(result.levelsLeafAdjacency.uniformRate.toFixed(2)),
+    cachedLevelsPrefixCoverage: Number(
+      result.cachedLevels.prefixBucketCoverage.toFixed(2),
+    ),
+    uniformPrefixCoverage: Number(
+      result.uniform.prefixBucketCoverage.toFixed(2),
+    ),
+    fixedLeafAdjacency: Number(
+      result.fixedLeafAdjacency.algorithmRate.toFixed(2),
+    ),
+    uniformFixedAdjacency: Number(
+      result.fixedLeafAdjacency.uniformRate.toFixed(2),
+    ),
+    levelsLeafAdjacency: Number(
+      result.levelsLeafAdjacency.algorithmRate.toFixed(2),
+    ),
+    cachedLevelsLeafAdjacency: Number(
+      result.cachedLevelsLeafAdjacency.algorithmRate.toFixed(2),
+    ),
+    uniformLevelsAdjacency: Number(
+      result.levelsLeafAdjacency.uniformRate.toFixed(2),
+    ),
+    uniformCachedLevelsAdjacency: Number(
+      result.cachedLevelsLeafAdjacency.uniformRate.toFixed(2),
+    ),
   };
 }
 
 export function main(): void {
   const scenarios: RoundRobinQualityScenario[] = [
-    { n: 25, fixedX: 4, xValues: [4, 3, 2], trials: 5000 },
-    { n: 100, fixedX: 4, xValues: [4, 3, 2], trials: 5000 },
-    { n: 250, fixedX: 8, xValues: [8, 4, 2], trials: 5000 },
+    { n: 25, fixedX: 4, xValues: [4, 3, 2], cacheSize: 8, trials: 5000 },
+    { n: 100, fixedX: 4, xValues: [4, 3, 2], cacheSize: 8, trials: 5000 },
+    { n: 250, fixedX: 8, xValues: [8, 4, 2], cacheSize: 16, trials: 5000 },
   ];
 
   const results = scenarios.map((scenario, index) =>

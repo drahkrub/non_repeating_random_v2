@@ -162,7 +162,7 @@ Die Simulation bestaetigt damit die qualitative Analyse sehr klar.
 
 ## RoundRobin-Varianten im Vergleich zur uniformen Referenz
 
-Fuer die beiden RoundRobin-Baum-Varianten in [src/roundRobinTreeRandomNumber.ts](src/roundRobinTreeRandomNumber.ts) und [src/roundRobinTreeRandomNumberByLevels.ts](src/roundRobinTreeRandomNumberByLevels.ts) gibt es eine eigene Vergleichssimulation in [src/roundRobinQualitySimulation.ts](src/roundRobinQualitySimulation.ts).
+Fuer die RoundRobin-Baum-Varianten in [src/roundRobinTreeRandomNumber.ts](src/roundRobinTreeRandomNumber.ts), [src/roundRobinTreeRandomNumberByLevels.ts](src/roundRobinTreeRandomNumberByLevels.ts) und [src/roundRobinTreeRandomNumberByLevelsWithCache.ts](src/roundRobinTreeRandomNumberByLevelsWithCache.ts) gibt es eine eigene Vergleichssimulation in [src/roundRobinQualitySimulation.ts](src/roundRobinQualitySimulation.ts).
 
 Die Simulation betrachtet vier verschiedene Signale:
 
@@ -179,6 +179,7 @@ Die RoundRobin-Varianten lassen sich nicht mit nur einer einfachen Kennzahl sinn
 - Die globale Inversionsrate ist ebenfalls fast identisch zu einer uniformen Permutation.
 - Trotzdem gibt es eine sehr starke lokale Struktur, weil komplette Blatt-Portionen zusammenhaengend ausgegeben werden.
 - Gleichzeitig kann die Prefix-Coverage sogar besser sein als bei einer uniformen Permutation, weil ein Blatt Werte aus weit auseinanderliegenden Bereichen enthalten kann.
+- Die gecachte Levels-Variante mischt genau diese lokale Struktur zusaetzlich auf, ohne den Baum selbst zu ersetzen.
 
 ### Beispielergebnisse aus `npm run simulate:round-robin-quality`
 
@@ -195,12 +196,93 @@ Die RoundRobin-Varianten lassen sich nicht mit nur einer einfachen Kennzahl sinn
 - Die Prefix-Coverage der ersten `k` Werte ist bei den RoundRobin-Varianten in den gezeigten Szenarien sogar besser als bei der uniformen Referenz. Das liegt daran, dass ein Blatt Werte aus weit auseinanderliegenden Bereichen des Zahlenraums enthalten kann.
 - Die Blatt-Clusterung trennt die Verfahren sehr deutlich. Bei `n = 100` liegt sie bei etwa `0.76` fuer beide RoundRobin-Varianten, aber nur bei etwa `0.03` fuer eine uniforme Permutation.
 
+### Gecachte Levels-Variante
+
+Die neue Variante in [src/roundRobinTreeRandomNumberByLevelsWithCache.ts](src/roundRobinTreeRandomNumberByLevelsWithCache.ts) setzt auf jeder Ebene einen `numberCache` ein. Dadurch bleibt die baumartige Struktur erhalten, aber die direkte Verkettung kompletter Blatt-Portionen wird stark aufgebrochen.
+
+Beispielergebnisse aus `npm run simulate:round-robin-quality`:
+
+| n | xValues | cacheSize | levelsEntropyBits | cachedLevelsEntropyBits | uniformEntropyBits | levelsPrefixCoverage | cachedLevelsPrefixCoverage | uniformPrefixCoverage | levelsLeafAdjacency | cachedLevelsLeafAdjacency | uniformLevelsAdjacency |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 25 | 4, 3, 2 | 8 | 4.45 | 4.64 | 4.64 | 0.81 | 0.74 | 0.73 | 0.75 | 0.19 | 0.11 |
+| 100 | 4, 3, 2 | 8 | 6.46 | 6.62 | 6.63 | 0.87 | 0.72 | 0.67 | 0.76 | 0.18 | 0.03 |
+| 250 | 8, 4, 2 | 16 | 7.93 | 7.93 | 7.93 | 1.00 | 0.98 | 0.94 | 0.88 | 0.20 | 0.03 |
+
+Interpretation:
+
+- Die Blatt-Clusterung sinkt drastisch. Bei `n = 100` faellt sie von `0.76` auf `0.18`.
+- Die Entropie der ersten Position steigt auf das Niveau der uniformen Referenz oder sehr nahe daran.
+- Die Prefix-Coverage bleibt hoch, sinkt aber gegenueber der ungecacheten Levels-Variante etwas ab. Das ist der erwartbare Preis fuer die zusaetzliche Durchmischung.
+- Die Inversionsrate bleibt weiterhin nahe `0.5`; auch mit Cache ist das also keine trennscharfe Kennzahl.
+
+### Sweep ueber verschiedene Cache-Groessen
+
+Um einen brauchbaren Kompromiss nicht nur fuer einen einzelnen Wert von `cacheSize`, sondern systematisch zu finden, gibt es jetzt eine eigene Sweep-Simulation in [src/roundRobinCacheSweepSimulation.ts](src/roundRobinCacheSweepSimulation.ts).
+
+Die Idee ist:
+
+- Fuer eine feste Baumstruktur werden mehrere `cacheSize`-Werte durchprobiert.
+- Standardmaessig werden diese Werte jetzt automatisch als Zweierpotenzen erzeugt.
+- Fuer jeden Wert werden dieselben Kennzahlen wie zuvor gemessen.
+- Zusaetzlich wird ein Kompromiss-Score berechnet.
+
+Die automatische Obergrenze ist eine pragmatische Heuristik:
+
+$$
+\min\left(n, 2^{\lceil \log_2(\max(x_0, \lceil \sqrt{n} \rceil)) \rceil}\right)
+$$
+
+Dabei ist `x_0` die Portionsgroesse der untersten Ebene. Die Idee dahinter:
+
+- der Sweep soll gross genug sein, um ueber die Blattgroesse hinaus zu testen,
+- aber nicht unnoetig weit laufen,
+- und trotzdem nur logarithmisch viele Kandidaten erzeugen.
+
+Fuer die aktuell gezeigten Beispiele ergibt das automatisch:
+
+- bei `n = 100`, `xValues = [4, 3, 2]` die Kandidaten `1, 2, 4, 8, 16`
+- bei `n = 250`, `xValues = [8, 4, 2]` die Kandidaten `1, 2, 4, 8, 16`
+
+Der Kompromiss-Score basiert auf genau den beiden Zielen, die sich gegenseitig behindern:
+
+- moeglichst viel Prefix-Coverage-Vorteil gegenueber uniform behalten
+- moeglichst viel Blatt-Clusterung gegenueber der ungecacheten Levels-Variante abbauen
+
+Formal wird dafuer gemessen:
+
+- `prefixRetention`: wie viel des Prefix-Coverage-Vorteils der ungecacheten Levels-Variante gegenueber uniform erhalten bleibt
+- `leafReduction`: wie viel des Blatt-Clusterungs-Ueberschusses der ungecacheten Levels-Variante gegenueber uniform abgebaut wird
+
+Dann gilt:
+
+$$
+	ext{compromiseScore} = \frac{\text{prefixRetention} + \text{leafReduction}}{2}
+$$
+
+Ein hoeherer Wert bedeutet also einen besseren Kompromiss zwischen frueher globaler Streuung und schwacher lokaler Clusterung.
+
+Aktuelle Beispiele aus `npm run simulate:round-robin-cache-sweep`:
+
+| n | xValues | getestete cacheSize-Werte | empfohlener cacheSize |
+| --- | --- | --- | --- |
+| 100 | 4, 3, 2 | 1, 2, 4, 8, 16 | 4 |
+| 250 | 8, 4, 2 | 1, 2, 4, 8, 16 | 16 |
+
+Interpretation:
+
+- Kleine Caches behalten mehr Prefix-Coverage, reduzieren die Blatt-Clusterung aber nur wenig.
+- Sehr grosse Caches brechen die Blatt-Clusterung stark auf, verlieren aber einen Teil des Prefix-Coverage-Vorteils.
+- Der beste Kompromiss liegt daher typischerweise in einem mittleren Bereich und nicht bei den Extremen.
+- In den gezeigten Szenarien liegt dieser Kompromiss bei `cacheSize = 4` fuer `n = 100` und bei `cacheSize = 16` fuer `n = 250`.
+
 Damit ergibt sich ein klares Bild:
 
 - Global wirken die RoundRobin-Varianten auf den ersten Blick relativ gut.
 - Lokal sind sie stark strukturiert.
 - Wer moeglichst wenig unmittelbare Nachbarschaftsstruktur will, braucht weiterhin die uniforme Variante.
 - Wer fruehe Streuung ueber den Zahlenraum schaetzt und die Blockstruktur akzeptiert, bekommt mit den RoundRobin-Varianten ein interessantes Mittelmodell.
+- Die gecachte Levels-Variante ist ein sinnvoller Kompromiss: deutlich weniger lokale Blatt-Clusterung als die ungecachete Levels-Variante, aber weiterhin weniger Speicherbedarf als eine vollstaendig uniforme Permutation.
+- Mit dem Sweep laesst sich dieser Kompromiss fuer konkrete Werte von `n`, `xValues` und `trials` gezielt abstimmen.
 
 ## Ausfuehrung
 
@@ -208,3 +290,4 @@ Damit ergibt sich ein klares Bild:
 - Uniforme Variante demonstrieren: `npm run start:uniform`
 - Bias-Simulation ausfuehren: `npm run simulate:bias`
 - RoundRobin-Qualitaet vergleichen: `npm run simulate:round-robin-quality`
+- Cache-Size-Sweep fuer RoundRobin ausfuehren: `npm run simulate:round-robin-cache-sweep`
