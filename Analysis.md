@@ -299,17 +299,17 @@ The most important distinction is:
 
 | Variant | amortised time per value | total runtime for all `N` values | additional memory |
 | --- | --- | --- | --- |
-| Sequential source `useNextSequentialNumber` | `O(1)` | `O(N)` | `O(1)` |
-| Cache generator `useNextNonRepeatingRandomNumber(N, y)` | `O(1)` | `O(N)` | `O(min(N, y))` |
-| Uniform variant `useNextUniformRandomNumber(N)` | `O(1)` after setup | `O(N)` | `O(N)` |
-| Round-robin tree with fixed `x` | `O(1)` amortised | `O(N)` for constant `x >= 2` | $O(x \log_x N)$ |
-| Round-robin tree with `xValues` | `O(1)` amortised in the typical case | $O\left(\sum_i m_i\right)$ | $O\left(\sum_i \min(m_i, b_i)\right)$ |
-| Cached round-robin tree with `xValues` and `cacheSize = c` | `O(1)` amortised in the typical case | $O\left(\sum_i m_i\right)$ | $O\left(\sum_i (\min(m_i, b_i) + \min(m_i, c))\right)$ |
+| Sequential source `useNextSequentialNumber` | $O(1)$ | $O(N)$ | $O(1)$ |
+| Cache generator `useNextNonRepeatingRandomNumber(N, y)` | $O(1)$ | $O(N)$ | $O(\min(N, y))$ |
+| Uniform variant `useNextUniformRandomNumber(N)` | $O(1)$ after setup | $O(N)$ | $O(N)$ |
+| Round-robin tree with fixed `x` | $O(1)$ amortised | $O(N)$ for constant $x \geq 2$ | $O(x \log_x N)$ |
+| Round-robin tree with `xValues` | $O(1)$ amortised in the typical case | $O\left(\sum_i m_i\right)$ | $O\left(\sum_i \min(m_i, b_i)\right)$ |
+| Cached round-robin tree with `xValues` and `cacheSize = c` | $O(1)$ amortised in the typical case | $O\left(\sum_i m_i\right)$ | $O\left(\sum_i (\min(m_i, b_i) + \min(m_i, c))\right)$ |
 
 For the last two rows:
 
 - $m_0 = N$
-- $b_i = \text{xValues}[\min(i, \text{xValues.length} - 1)]$
+- $b_i = \texttt{xValues}[\min(i, \texttt{xValues.length} - 1)]$
 - $m_{i+1} = \lceil m_i / b_i \rceil$
 
 $m_i$ is the problem size at level $i$, and $b_i$ is the portion width used there.
