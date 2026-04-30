@@ -1,0 +1,21 @@
+{
+  "name": "vue3-forms Sandbox",
+  "image": "mcr.microsoft.com/devcontainers/typescript-node:4-24-trixie",
+
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash"
+      },
+      "extensions": [
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "vitest.explorer",
+        "Vue.volar",
+        // GitHub Copilot & Chat
+        "GitHub.copilot",
+        "GitHub.copilot-chat"
+      ]
+    }
+  }
+}
